@@ -9,6 +9,7 @@ use the reserved CUSTOM -0 opcode (0x0B)
 ### success 
     final testbench - 25 store at memory 100
 ## 📂 Project Structure
+```
 riscv_single/
 │
 ├── src/
@@ -23,7 +24,7 @@ riscv_single/
 │ └── rvx10.hex # compiled memory image for simulation
 │
 └── README.md # build & run instructions
-
+```
 ## modify RTL (risvsingle.sv)
 
 ## ⚙️ Build & Simulation Instructions
@@ -40,4 +41,19 @@ using Icarus verilog
 iverilog -g2012 -o simv src/riscv_single.sv tb/tb_riscv_single.sv
 vvp simv
 ```
+```
 
+To add 10 new ops:
+
+Introduce a new opcode: CUSTOM-0 = 0x0B (0001011b) from the assignment brief. 
+
+CS322M_Assignment_single-1
+
+Expand ALUControl from 3 bits to 5 bits so we have space for the new operations.
+
+Teach maindec to mark CUSTOM-0 as ALU operation (no memory/branch/jump).
+
+Teach aludec how to decode CUSTOM-0 via (funct7,funct3) to the 10 new 5-bit ALU codes.
+
+Implement the 10 ops inside alu (ANDN/ORN/XNOR/MIN/MAX/MINU/MAXU/ROL/ROR/ABS) with the correct semantics (rotate by 0 = passthrough; ABS uses two’s complement wrap).
+```
