@@ -58,3 +58,13 @@ Teach aludec how to decode CUSTOM-0 via (funct7,funct3) to the 10 new 5-bit ALU 
 Implement the 10 ops inside alu (ANDN/ORN/XNOR/MIN/MAX/MINU/MAXU/ROL/ROR/ABS) with the 
 correct semantics (rotate by 0 = passthrough; ABS uses two’s complement wrap).
 ```
+## the Waveform 
+using gtkwave
+### riscvtest.txt test file of RISCV32I 
+To verify the working of the 5 bit coversion from 3 bit. The riscvsingle works on previous test cases.
+![waverform figure](ss_riscvtest.png)
+
+### rvx10.txt test file 
+the new test written for the verifying ther new instruction 
+
+![state daigram](ss_rvx10.png)
