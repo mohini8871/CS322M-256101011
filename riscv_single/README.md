@@ -55,5 +55,6 @@ Teach maindec to mark CUSTOM-0 as ALU operation (no memory/branch/jump).
 
 Teach aludec how to decode CUSTOM-0 via (funct7,funct3) to the 10 new 5-bit ALU codes.
 
-Implement the 10 ops inside alu (ANDN/ORN/XNOR/MIN/MAX/MINU/MAXU/ROL/ROR/ABS) with the correct semantics (rotate by 0 = passthrough; ABS uses two’s complement wrap).
+Implement the 10 ops inside alu (ANDN/ORN/XNOR/MIN/MAX/MINU/MAXU/ROL/ROR/ABS) with the 
+correct semantics (rotate by 0 = passthrough; ABS uses two’s complement wrap).
 ```

@@ -25,3 +25,9 @@
 - When the total reaches 20, `vend` should output 1.
 - When the total reaches 25, both `vend` and `chg5` should output 1.
 - The state machine should reset after dispensing the product and change.
+
+![waverform figure](wavefm.png)
+
+
+
+![state daigram](fsm_daigram.jpg)

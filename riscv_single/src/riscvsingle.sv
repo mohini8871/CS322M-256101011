@@ -20,6 +20,13 @@
 
 //ABS → absolute value of rs
 
+
+
+// expanding to ALUControl from 3 bits to 5 bits to accommodate new instructions
+// ALUControl values for new instructions:
+// ANDN  = 3'b1000  
+
+
 // From Section 7.6 of Digital Design & Computer Architecture
 // 27 April 2020
 // David_Harris@hmc.edu 
@@ -113,6 +120,14 @@ module testbench();
     begin
       reset <= 1; # 22; reset <= 0;
     end
+  initial 
+    begin
+    $dumpfile("wave.vcd");          // output file name
+    $dumpvars(0, testbench);        // dump everything under 'testbench'
+    // (optional) also dump memories explicitly:
+    // $dumpvars(0, testbench.imem.RAM);
+    // $dumpvars(0, testbench.dmem.RAM);
+    end
 
   // generate clock to sequence tests
   always
@@ -157,7 +172,7 @@ module riscvsingle(input  logic        clk, reset,
 
   logic       ALUSrc, RegWrite, Jump, Zero;
   logic [1:0] ResultSrc, ImmSrc;
-  logic [2:0] ALUControl;
+  logic [4:0] ALUControl;
 
   controller c(Instr[6:0], Instr[14:12], Instr[30], Zero,
                ResultSrc, MemWrite, PCSrc,
@@ -179,7 +194,7 @@ module controller(input  logic [6:0] op,
                   output logic       PCSrc, ALUSrc,
                   output logic       RegWrite, Jump,
                   output logic [1:0] ImmSrc,
-                  output logic [2:0] ALUControl);
+                  output logic [4:0] ALUControl);
 
   logic [1:0] ALUOp;
   logic       Branch;
@@ -191,6 +206,7 @@ module controller(input  logic [6:0] op,
   assign PCSrc = Branch & Zero | Jump;
 endmodule
 
+// add CUSTOM-0 in maindec
 module maindec(input  logic [6:0] op,
                output logic [1:0] ResultSrc,
                output logic       MemWrite,
@@ -213,42 +229,84 @@ module maindec(input  logic [6:0] op,
       7'b1100011: controls = 11'b0_10_0_0_00_1_01_0; // beq
       7'b0010011: controls = 11'b1_00_1_0_00_0_10_0; // I-type ALU
       7'b1101111: controls = 11'b1_11_0_0_10_0_00_1; // jal
+    //// RVX10 new instructions R-type CUSTOM-0
+      7'b0001011: controls = 11'b1_xx_0_0_00_0_11_0; // ANDN, ORN, XNOR, ROL, ROR, MIN, MAX, MINU, MAXU
+
       default:    controls = 11'bx_xx_x_x_xx_x_xx_x; // non-implemented instruction
     endcase
 endmodule
 
-module aludec(input  logic       opb5,
-              input  logic [2:0] funct3,
-              input  logic       funct7b5, 
-              input  logic [1:0] ALUOp,
-              output logic [2:0] ALUControl);
+// expand ALUControl to 5 bits to accommodate new instructions
+// same old mapping by changing the 3'bxxx to 5'b00xxx for CUSTOM-0
+module aludec(
+  input  logic       opb5,
+  input  logic [2:0] funct3,
+  input  logic       funct7b5,
+  input  logic [1:0] ALUOp,
+  output logic [4:0] ALUControl   // <<< was [2:0]
+);
 
-  logic  RtypeSub;
+  logic RtypeSub;
   assign RtypeSub = funct7b5 & opb5;  // TRUE for R-type subtract instruction
 
-  always_comb
-    case(ALUOp)
-      2'b00:                ALUControl = 3'b000; // addition
-      2'b01:                ALUControl = 3'b001; // subtraction
-      default: case(funct3) // R-type or I-type ALU
-                 3'b000:  if (RtypeSub) 
-                            ALUControl = 3'b001; // sub
-                          else          
-                            ALUControl = 3'b000; // add, addi
-                 3'b010:    ALUControl = 3'b101; // slt, slti
-                 3'b110:    ALUControl = 3'b011; // or, ori
-                 3'b111:    ALUControl = 3'b010; // and, andi
-                 default:   ALUControl = 3'bxxx; // ???
-               endcase
+  always_comb begin
+    unique case (ALUOp)
+      2'b00: ALUControl = 5'b00000; // add      (old 3'b000)
+      2'b01: ALUControl = 5'b00001; // sub      (old 3'b001)
+
+      // Old R/I ALU via funct3 (keep identical mappings)
+      2'b10: unique case (funct3)
+        3'b000: ALUControl = RtypeSub ? 5'b00001  // sub (old 001)
+                                      : 5'b00000; // add (old 000)
+        3'b010: ALUControl = 5'b00101; // slt     (old 101)
+        3'b110: ALUControl = 5'b00011; // or      (old 011)
+        3'b111: ALUControl = 5'b00010; // and     (old 010)
+        3'b100: ALUControl = 5'b00100; // xor     (old 100)
+        3'b001: ALUControl = 5'b00110; // sll     (old 110)
+        3'b101: ALUControl = 5'b00111; // srl     (old 111)
+        default: ALUControl = 5'bxxxxx;
+      endcase
+
+      // >>> NEW: RVX10 (CUSTOM-0) via funct7+funct3 <<<
+      2'b11: unique case ({funct7b5, funct3})
+        // funct7 (full 7 bits) are needed; key on the top bit + funct3 first
+        // Then refine using full funct7 below if needed.
+
+        // We’ll decode by full funct7 & funct3 using nested conditionals:
+        default: begin
+          // ANDN/ORN/XNOR: funct7 = 0000000
+          if      (funct3 == 3'b000 && !funct7b5) ALUControl = 5'b01000; // ANDN
+          else if (funct3 == 3'b001 && !funct7b5) ALUControl = 5'b01001; // ORN
+          else if (funct3 == 3'b010 && !funct7b5) ALUControl = 5'b01010; // XNOR
+
+          // MIN/MAX/MINU/MAXU: funct7 = 0000001
+          else if (funct3 == 3'b000 &&  funct7b5) ALUControl = 5'b01011; // MIN
+          else if (funct3 == 3'b001 &&  funct7b5) ALUControl = 5'b01100; // MAX
+          else if (funct3 == 3'b010 &&  funct7b5) ALUControl = 5'b01101; // MINU
+          else if (funct3 == 3'b011 &&  funct7b5) ALUControl = 5'b01110; // MAXU
+
+          // ROL/ROR: funct7 = 0000010
+          else if (funct3 == 3'b000 &&  !funct7b5) ALUControl = 5'b01111; // ROL
+          else if (funct3 == 3'b001 &&  !funct7b5) ALUControl = 5'b10000; // ROR
+
+          // ABS: funct7 = 0000011, funct3 = 000
+          else if (funct3 == 3'b000 &&  !funct7b5) ALUControl = 5'b10001; // ABS
+
+          else ALUControl = 5'bxxxxx;
+        end
+      endcase
+      default: ALUControl = 5'bxxxxx;
     endcase
+  end
 endmodule
+//Mapping matches the assignment’s funct7/funct3 table for all 10 RVX10 ops.
 
 module datapath(input  logic        clk, reset,
                 input  logic [1:0]  ResultSrc, 
                 input  logic        PCSrc, ALUSrc,
                 input  logic        RegWrite,
                 input  logic [1:0]  ImmSrc,
-                input  logic [2:0]  ALUControl,
+                input  logic [4:0]  ALUControl,
                 output logic        Zero,
                 output logic [31:0] PC,
                 input  logic [31:0] Instr,
@@ -353,7 +411,7 @@ module imem(input  logic [31:0] a,
   logic [31:0] RAM[63:0];
 
   initial
-      $readmemh("riscvtest.txt",RAM);
+      $readmemh("C:\Users\Mohini Dangi\Documents\phd course work\logistic\LAB2\CS322M-256101011\riscv_single\tests\rvx10.txt",RAM);
 
   assign rd = RAM[a[31:2]]; // word aligned
 endmodule
@@ -369,35 +427,55 @@ module dmem(input  logic        clk, we,
   always_ff @(posedge clk)
     if (we) RAM[a[31:2]] <= wd;
 endmodule
-
-module alu(input  logic [31:0] a, b,
-           input  logic [2:0]  alucontrol,
-           output logic [31:0] result,
-           output logic        zero);
-
+//Keep all your old cases (ADD/SUB/AND/OR/XOR/SLT/SLL/SRL) using the same 5-bit values we set above for backward compatibility
+module alu(
+  input  logic [31:0] a, b,
+  input  logic [4:0]  alucontrol,   // <<< was [2:0]
+  output logic [31:0] result,
+  output logic        zero
+);
   logic [31:0] condinvb, sum;
   logic        v;              // overflow
-  logic        isAddSub;       // true when is add or subtract operation
+  logic        isAddSub;       // true when add or subtract
+  logic signed [31:0] as = a;
+  logic signed [31:0] bs = b;
+  logic [4:0] sh = b[4:0];
 
   assign condinvb = alucontrol[0] ? ~b : b;
-  assign sum = a + condinvb + alucontrol[0];
-  assign isAddSub = ~alucontrol[2] & ~alucontrol[1] |
-                    ~alucontrol[1] & alucontrol[0];
+  assign isAddSub = (alucontrol == 5'b00000) || (alucontrol == 5'b00001);
 
-  always_comb
-    case (alucontrol)
-      3'b000:  result = sum;         // add
-      3'b001:  result = sum;         // subtract
-      3'b010:  result = a & b;       // and
-      3'b011:  result = a | b;       // or
-      3'b100:  result = a ^ b;       // xor
-      3'b101:  result = sum[31] ^ v; // slt
-      3'b110:  result = a << b[4:0]; // sll
-      3'b111:  result = a >> b[4:0]; // srl
+  // Adder shared by add/sub and slt
+  assign sum = a + condinvb + alucontrol[0];
+
+  always_comb begin
+    unique case (alucontrol)
+      // ---- Original ops (unchanged encodings) ----
+      5'b00000: result = sum;                   // add
+      5'b00001: result = sum;                   // sub
+      5'b00010: result = a & b;                 // and
+      5'b00011: result = a | b;                 // or
+      5'b00100: result = a ^ b;                 // xor
+      5'b00101: result = sum[31] ^ v;           // slt (signed)
+      5'b00110: result = a << sh;               // sll
+      5'b00111: result = a >> sh;               // srl (logical)
+
+      // ---- RVX10 new ops ----
+      5'b01000: result = a & ~b;                                   // ANDN
+      5'b01001: result = a | ~b;                                   // ORN
+      5'b01010: result = ~(a ^ b);                                 // XNOR
+      5'b01011: result = (as <  bs) ? a : b;                       // MIN  (signed)
+      5'b01100: result = (as >  bs) ? a : b;                       // MAX  (signed)
+      5'b01101: result = (a  <  b ) ? a : b;                       // MINU (unsigned)
+      5'b01110: result = (a  >  b ) ? a : b;                       // MAXU (unsigned)
+      5'b01111: result = (sh == 0) ? a : ((a << sh) | (a >> (32-sh))); // ROL
+      5'b10000: result = (sh == 0) ? a : ((a >> sh) | (a << (32-sh))); // ROR
+      5'b10001: result = (as >= 0) ? a : (32'h0000_0000 - a);      // ABS
+
       default: result = 32'bx;
     endcase
+  end
 
   assign zero = (result == 32'b0);
   assign v = ~(alucontrol[0] ^ a[31] ^ b[31]) & (a[31] ^ sum[31]) & isAddSub;
-  
 endmodule
+
