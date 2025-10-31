@@ -1,17 +1,16 @@
+// -----------------------------------------------------------------------------
+// Forwarding Unit
+// Simple forwarding logic for resolving data hazards in pipeline stages.
+// -----------------------------------------------------------------------------
 module forwarding_unit (
-    input mem_write,
-    input reg_write,
-    input [31:0] mem_out,
-    input [31:0] alu_out,
-    output reg [31:0] forwarding_data
+  input  logic        mem_write,
+  input  logic        reg_write,
+  input  logic [31:0] mem_out,
+  input  logic [31:0] alu_out,
+  input  logic [4:0]  reg_dest,
+  output logic [31:0] forwarding_data
 );
-
-    always @(*) begin
-        if (reg_write) begin
-            forwarding_data = alu_out;  // Forward data from EX stage if needed
-        end else begin
-            forwarding_data = mem_out;  // Forward data from MEM stage if needed
-        end
-    end
-
+  always_comb begin
+    forwarding_data = reg_write ? alu_out : mem_out;
+  end
 endmodule

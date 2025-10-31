@@ -27,4 +27,9 @@ module tb_pipeline;
         // Check results
         
     end
+    initial begin
+        $dumpfile("wave.vcd");
+        $dumpvars(0, tb_pipeline); 
+    end
+
 endmodule
